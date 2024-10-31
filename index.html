@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nederlands Studeren</title>
+    <style>
+        /* Existing styles */
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 400px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        /* New styles for navigation links */
+        .nav-links {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 0;
+        }
+
+        .nav-links a {
+            cursor: pointer;
+            color: #007BFF;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-links a.active {
+            text-decoration: underline;
+        }
+
+        #flashcard {
+            width: 100%;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 40px;
+            font-weight: bold;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            margin: 20px 0;
+            perspective: 1000px;
+            cursor: pointer;
+        }
+
+        .flip-card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+
+        .flip-card-front, .flip-card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .flip-card-back {
+            background-color: #f0f0f0;
+            color: black;
+            transform: rotateY(180deg);
+            font-size: 16px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .flip {
+            transform: rotateY(180deg);
+        }
+
+        input[type="text"], button {
+            padding: 10px;
+            margin: 5px;
+            font-size: 16px;
+            width: calc(100% - 30px);
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 80px;
+            margin: 5px;
+            cursor: pointer;
+        }
+
+        /* New styles for favorite button */
+        #favorite {
+            background-color: lightblue;
+            border: none;
+            border-radius: 5px;
+            color: white;
+        }
+
+        #favorite.favorited {
+            background-color: red;
+        }
+
+        @media only screen and (max-width: 600px) {
+            #flashcard {
+                height: 150px;
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Links -->
+        <div class="nav-links">
+            <a href="#" id="all-link" class="active">All</a>
+            <a href="#" id="favorites-link">Favorites</a>
+        </div>
+
+        <!-- Search Bar -->
+        <input type="text" id="search" placeholder="Search word...">
+        <button id="search-btn">Search</button>
+        
+        <!-- Flashcard -->
+        <div id="flashcard">
+            <div class="flip-card-inner" id="card-inner">
+                <div class="flip-card-front" id="word">Loading...</div>
+                <div class="flip-card-back" id="details">
+                    <p><strong>Meaning:</strong></p>
+                    <p><strong>Past:</strong></p>
+                    <p><strong>Comment:</strong></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Buttons -->
+        <div>
+            <button id="prev">Prev</button>
+            <button id="next">Next</button>
+            <br />
+            <button id="random">Random</button>
+            <button id="favorite">Favorite</button>
+        </div>
+        <hr />
+        <div>
+            <button id="reload-storage">Reload Words from Server</button>
+        </div>
+    </div>
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        let allWords = []; // All words from storage or API
+        let words = [];     // Current words to display (all or favorites)
+        let currentIndex = 0;
+        let flipped = false;
+        let currentView = 'all'; // 'all' or 'favorites'
+
+        // Keys for localStorage
+        const LOCAL_STORAGE_KEY = 'flashcardWords';
+        const FAVORITES_STORAGE_KEY = 'favoriteWords';
+        const API_ENDPOINT = 'https://wsky1jssqk.execute-api.us-east-1.amazonaws.com/dutch-flashcard-notion-api';
+
+        // Function to display a word on the card
+        function displayWord(index) {
+            if (words.length === 0) {
+                $('#word').text('No words to display');
+                $('#details').html('');
+                $('#favorite').hide();
+                return;
+            }
+
+            const wordData = words[index];
+            $('#word').text(wordData.word);
+            $('#details').html(
+                `<p><strong>Meaning:</strong> ${wordData.meaning}</p>
+                 <p><strong>Past:</strong> ${wordData.past}</p>
+                 <p><strong>Comment:</strong> ${wordData.comment}</p>`
+            );
+
+            // Update favorite button
+            updateFavoriteButton(wordData);
+        }
+
+        // Function to get a random word
+        function randomWord() {
+            if (words.length === 0) return;
+            currentIndex = Math.floor(Math.random() * words.length);
+            displayWord(currentIndex);
+        }
+
+        async function prevWord() {
+            if (flipped) {
+                flipCard();
+                await sleep(250);
+            }
+            if (words.length === 0) return;
+            currentIndex = (currentIndex === 0) ? words.length - 1 : currentIndex - 1;
+            displayWord(currentIndex);
+        }
+
+        async function nextWord() {
+            if (flipped) {
+                flipCard();
+                await sleep(250);
+            }
+            if (words.length === 0) return;
+            currentIndex = (currentIndex === words.length - 1) ? 0 : currentIndex + 1;
+            displayWord(currentIndex);
+        }
+
+        function flipCard() {
+            $('#card-inner').toggleClass('flip');
+            flipped = !flipped;
+        }
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];  // Swap elements
+            }
+            return array;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Favorites Management
+        function getFavorites() {
+            const storedFavorites = localStorage.getItem(FAVORITES_STORAGE_KEY);
+            if (storedFavorites) {
+                return JSON.parse(storedFavorites);
+            }
+            return [];
+        }
+
+        function saveFavorites(favorites) {
+            localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+        }
+
+        function isFavorite(wordData) {
+            const favorites = getFavorites();
+            return favorites.some(fav => fav.word === wordData.word);
+        }
+
+        function addFavorite(wordData) {
+            const favorites = getFavorites();
+            // Avoid duplicates
+            if (!favorites.some(fav => fav.word === wordData.word)) {
+                favorites.push(wordData);
+                saveFavorites(favorites);
+            }
+        }
+
+        function removeFavorite(wordData) {
+            let favorites = getFavorites();
+            favorites = favorites.filter(fav => fav.word !== wordData.word);
+            saveFavorites(favorites);
+        }
+
+        function updateFavoriteButton(wordData) {
+            if (isFavorite(wordData)) {
+                $('#favorite').addClass('favorited').text('Unfavorite');
+            } else {
+                $('#favorite').removeClass('favorited').text('Favorite');
+            }
+            $('#favorite').show();
+        }
+
+        // Toggle favorite status
+        function toggleFavorite() {
+            if (words.length === 0) return;
+            const currentWord = words[currentIndex];
+            if (isFavorite(currentWord)) {
+                removeFavorite(currentWord);
+                $('#favorite').removeClass('favorited').text('Favorite');
+            } else {
+                addFavorite(currentWord);
+                $('#favorite').addClass('favorited').text('Unfavorite');
+            }
+        }
+
+        // Function to load favorites view
+        function loadFavoritesView() {
+            currentView = 'favorites';
+            $('#all-link').removeClass('active');
+            $('#favorites-link').addClass('active');
+
+            const favorites = getFavorites();
+            words = shuffleArray([...favorites]); // Clone and shuffle
+            currentIndex = 0;
+            displayWord(currentIndex);
+        }
+
+        // Function to load all words view
+        function loadAllView() {
+            currentView = 'all';
+            $('#favorites-link').removeClass('active');
+            $('#all-link').addClass('active');
+
+            words = shuffleArray([...allWords]); // Clone and shuffle
+            currentIndex = 0;
+            displayWord(currentIndex);
+        }
+
+        // Function to fetch words from the Notion API
+        function fetchWordsFromAPI() {
+            console.log('Fetching words from API...');
+            $('#word').text('Loading...');
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    url: API_ENDPOINT,
+                    method: 'POST',
+                    success: function(response) {
+                        const data = JSON.parse(response);  // Parse response body
+
+                        allWords = data.map(result => ({
+                            word: result.Name || 'No word',         // Retrieve the word (Name)
+                            meaning: result.Meaning || 'No meaning',  // Retrieve the meaning
+                            past: result.Past || 'No past',          // Retrieve the past tense
+                            comment: result.Comment || 'No comment'  // Retrieve the comment
+                        }));                
+                        console.log('Words fetched from API: words count:', allWords.length);
+
+                        // Save words to local storage
+                        saveWordsToLocalStorage(allWords);
+                        
+                        resolve();
+                    },
+                    error: function(xhr, status, error) {
+                        console.log('Error fetching data:', error);
+                        reject();   
+                    }
+                });
+           });
+        }
+
+        // Key to use for storing words in local storage
+        function getWordsFromLocalStorage() {
+            const storedWords = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (storedWords) {
+                // Parse the stored JSON data
+                return JSON.parse(storedWords);
+            }
+            return null;
+        }
+
+        // Save words to local storage
+        function saveWordsToLocalStorage(words) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(words));
+            console.log('Words saved to local storage:', words);
+        }
+
+        // Function to load words based on current view
+        async function loadWords() {
+            console.log('Loading words...');
+            if (currentView === 'all') {
+                allWords = getWordsFromLocalStorage();
+                
+                if (!allWords) {
+                    console.log('Words not found in local storage.');
+                    // If words are not in local storage, fetch them from the API
+                    await fetchWordsFromAPI();
+                    console.log('Words fetched from API.');
+                }
+
+                words = shuffleArray([...allWords]); // Clone and shuffle
+            } else if (currentView === 'favorites') {
+                const favorites = getFavorites();
+                words = shuffleArray([...favorites]); // Clone and shuffle
+            }
+
+            console.log('Words loaded:', words);
+            currentIndex = 0;
+            displayWord(currentIndex);
+        }
+
+        function deleteWordsFromLocalStorage() {
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            console.log('Local storage for words has been deleted.');
+        }
+
+        function reloadWords() {
+            deleteWordsFromLocalStorage();
+            loadWords();
+        }
+
+        // Search functionality
+        function searchWord() {
+            const query = $('#search').val().trim().toLowerCase();
+            if (query === "") {
+                alert("Please enter a word to search.");
+                return;
+            }
+
+            let searchArray = [];
+
+            if (currentView === 'all') {
+                searchArray = allWords;
+            } else if (currentView === 'favorites') {
+                searchArray = getFavorites();
+            }
+
+            // Find the first matching word
+            const foundIndex = searchArray.findIndex(word => word.word.toLowerCase().includes(query));
+
+            if (foundIndex !== -1) {
+                // If current view is 'all', find the index in 'words' array
+                if (currentView === 'all') {
+                    currentIndex = allWords.findIndex(word => word.word.toLowerCase().includes(query));
+                } else if (currentView === 'favorites') {
+                    currentIndex = getFavorites().findIndex(word => word.word.toLowerCase().includes(query));
+                }
+                displayWord(currentIndex);
+            } else {
+                alert("No matching word found.");
+            }
+        }
+
+        $(document).ready(function() {
+            loadWords();
+
+            // Flip the card when clicked
+            $('#flashcard').on('click', function() {
+                flipCard();
+            });
+
+            // Random, Prev, Next, and Favorite button functionality
+            $('#random').on('click', randomWord);
+            $('#prev').on('click', prevWord);
+            $('#next').on('click', nextWord);
+            $('#favorite').on('click', toggleFavorite);
+            $('#reload-storage').on('click', reloadWords);
+
+            // Navigation links
+            $('#all-link').on('click', function(e) {
+                e.preventDefault();
+                if (currentView !== 'all') {
+                    loadAllView();
+                }
+            });
+
+            $('#favorites-link').on('click', function(e) {
+                e.preventDefault();
+                if (currentView !== 'favorites') {
+                    loadFavoritesView();
+                }
+            });
+
+            // Search button functionality
+            $('#search-btn').on('click', searchWord);
+        });
+    </script>
+</body>
+</html>
